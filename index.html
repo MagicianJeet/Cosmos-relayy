@@ -1,1 +1,66 @@
-
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Cosmos Relay</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box;}
+body{background:#000;color:#00ff00;font-family:monospace;display:flex;flex-direction:column;align-items:center;justify-content:center;height:100vh;gap:20px;}
+#icon{font-size:4rem;}
+#status{font-size:1.3rem;text-align:center;padding:0 20px;}
+#sub{font-size:0.85rem;color:#006600;text-align:center;}
+.error{color:#ff4444;}
+.success{color:#00ff00;}
+.sending{color:#ffaa00;}
+</style>
+</head>
+<body>
+<div id="icon">📡</div>
+<div id="status">Ready for paste...</div>
+<div id="sub">Waiting for Cmd+V</div>
+<script>
+const p=new URLSearchParams(location.search);
+const t=p.get('t');
+const c=p.get('c');
+const icon=document.getElementById('icon');
+const s=document.getElementById('status');
+const sub=document.getElementById('sub');
+history.replaceState(null,'',location.pathname);
+if(!t||!c){icon.textContent='⚠️';s.textContent='Missing token or chat ID';s.className='error';sub.textContent='Open this page from your COSMOS remote';}
+document.addEventListener('paste',async(e)=>{
+e.preventDefault();
+if(!t||!c){s.textContent='No token';s.className='error';return;}
+const items=[...e.clipboardData.items];
+const imgItem=items.find(i=>i.type.startsWith('image/'));
+if(imgItem){
+icon.textContent='🖼️';s.textContent='Sending image...';s.className='sending';sub.textContent='Please wait';
+const form=new FormData();
+form.append('chat_id',c);
+form.append('photo',imgItem.getAsFile(),'photo.jpg');
+try{
+const r=await fetch(`https://api.telegram.org/bot${t}/sendPhoto`,{method:'POST',body:form});
+const d=await r.json();
+if(d.ok){icon.textContent='✅';s.textContent='Image sent!';s.className='success';sub.textContent='Check your Telegram';}
+else{icon.textContent='❌';s.textContent='Failed: '+d.description;s.className='error';}
+}catch(err){icon.textContent='❌';s.textContent='Network error';s.className='error';}
+return;
+}
+const txtItem=items.find(i=>i.type==='text/plain');
+if(txtItem){
+txtItem.getAsString(async(text)=>{
+icon.textContent='📝';s.textContent='Sending text...';s.className='sending';
+try{
+const r=await fetch(`https://api.telegram.org/bot${t}/sendMessage?chat_id=${encodeURIComponent(c)}&text=${encodeURIComponent(text)}`);
+const d=await r.json();
+if(d.ok){icon.textContent='✅';s.textContent='Text sent!';s.className='success';sub.textContent='Check your Telegram';}
+else{icon.textContent='❌';s.textContent='Failed: '+d.description;s.className='error';}
+}catch(err){icon.textContent='❌';s.textContent='Network error';s.className='error';}
+});
+return;
+}
+icon.textContent='⚠️';s.textContent='Nothing to send';s.className='error';
+});
+</script>
+</body>
+</html>
