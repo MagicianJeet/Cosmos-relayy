@@ -6,10 +6,26 @@
 <title>Cosmos Relay</title>
 <style>
 *{margin:0;padding:0;box-sizing:border-box;}
-body{background:#000;color:#00ff00;font-family:monospace;display:flex;flex-direction:column;align-items:center;justify-content:center;height:100vh;gap:20px;}
-#icon{font-size:4rem;}
-#status{font-size:1.3rem;text-align:center;padding:0 20px;}
+body{background:#000;color:#00ff00;font-family:monospace;display:flex;flex-direction:column;align-items:center;justify-content:center;height:100vh;gap:16px;}
+#icon{font-size:3.5rem;}
+#status{font-size:1.2rem;text-align:center;padding:0 20px;}
 #sub{font-size:0.85rem;color:#006600;text-align:center;}
+#pastebox{
+  width:80vw;
+  height:80px;
+  background:#001100;
+  border:2px solid #00ff00;
+  border-radius:10px;
+  color:#00ff00;
+  font-family:monospace;
+  font-size:1rem;
+  padding:10px;
+  resize:none;
+  outline:none;
+  text-align:center;
+  caret-color:#00ff00;
+}
+#pastebox::placeholder{color:#004400;text-align:center;}
 .error{color:#ff4444;}
 .success{color:#00ff00;}
 .sending{color:#ffaa00;}
@@ -18,7 +34,9 @@ body{background:#000;color:#00ff00;font-family:monospace;display:flex;flex-direc
 <body>
 <div id="icon">📡</div>
 <div id="status">Ready for paste...</div>
-<div id="sub">Waiting for Cmd+V</div>
+<textarea id="pastebox" placeholder="Tap here and paste (Cmd+V)"></textarea>
+<div id="sub">Waiting for paste...</div>
+
 <script>
 const p=new URLSearchParams(location.search);
 const t=p.get('t');
@@ -26,41 +44,107 @@ const c=p.get('c');
 const icon=document.getElementById('icon');
 const s=document.getElementById('status');
 const sub=document.getElementById('sub');
+const box=document.getElementById('pastebox');
+
 history.replaceState(null,'',location.pathname);
-if(!t||!c){icon.textContent='⚠️';s.textContent='Missing token or chat ID';s.className='error';sub.textContent='Open this page from your COSMOS remote';}
-document.addEventListener('paste',async(e)=>{
-e.preventDefault();
-if(!t||!c){s.textContent='No token';s.className='error';return;}
-const items=[...e.clipboardData.items];
-const imgItem=items.find(i=>i.type.startsWith('image/'));
-if(imgItem){
-icon.textContent='🖼️';s.textContent='Sending image...';s.className='sending';sub.textContent='Please wait';
-const form=new FormData();
-form.append('chat_id',c);
-form.append('photo',imgItem.getAsFile(),'photo.jpg');
-try{
-const r=await fetch(`https://api.telegram.org/bot${t}/sendPhoto`,{method:'POST',body:form});
-const d=await r.json();
-if(d.ok){icon.textContent='✅';s.textContent='Image sent!';s.className='success';sub.textContent='Check your Telegram';}
-else{icon.textContent='❌';s.textContent='Failed: '+d.description;s.className='error';}
-}catch(err){icon.textContent='❌';s.textContent='Network error';s.className='error';}
-return;
+
+if(!t||!c){
+  icon.textContent='⚠️';
+  s.textContent='Missing token or chat ID';
+  s.className='error';
+  sub.textContent='Open from your COSMOS remote';
 }
-const txtItem=items.find(i=>i.type==='text/plain');
-if(txtItem){
-txtItem.getAsString(async(text)=>{
-icon.textContent='📝';s.textContent='Sending text...';s.className='sending';
-try{
-const r=await fetch(`https://api.telegram.org/bot${t}/sendMessage?chat_id=${encodeURIComponent(c)}&text=${encodeURIComponent(text)}`);
-const d=await r.json();
-if(d.ok){icon.textContent='✅';s.textContent='Text sent!';s.className='success';sub.textContent='Check your Telegram';}
-else{icon.textContent='❌';s.textContent='Failed: '+d.description;s.className='error';}
-}catch(err){icon.textContent='❌';s.textContent='Network error';s.className='error';}
-});
-return;
+
+// Auto focus the box so Cmd+V works immediately
+window.addEventListener('load',()=>{ box.focus(); });
+
+async function sendToTelegram(e){
+  e.preventDefault();
+
+  if(!t||!c){
+    s.textContent='No token — cannot send';
+    s.className='error';
+    return;
+  }
+
+  const items=[...(e.clipboardData||window.clipboardData).items];
+
+  // ── IMAGE ──────────────────────────────────────────────────────────
+  const imgItem=items.find(i=>i.type.startsWith('image/'));
+  if(imgItem){
+    icon.textContent='🖼️';
+    s.textContent='Sending image...';
+    s.className='sending';
+    sub.textContent='Please wait';
+    box.value='';
+
+    const form=new FormData();
+    form.append('chat_id',c);
+    form.append('photo',imgItem.getAsFile(),'photo.jpg');
+
+    try{
+      const r=await fetch(`https://api.telegram.org/bot${t}/sendPhoto`,{method:'POST',body:form});
+      const d=await r.json();
+      if(d.ok){
+        icon.textContent='✅';
+        s.textContent='Image sent!';
+        s.className='success';
+        sub.textContent='Check your Telegram';
+      } else {
+        icon.textContent='❌';
+        s.textContent='Failed: '+d.description;
+        s.className='error';
+        sub.textContent='';
+      }
+    } catch(err){
+      icon.textContent='❌';
+      s.textContent='Network error';
+      s.className='error';
+    }
+    return;
+  }
+
+  // ── TEXT ───────────────────────────────────────────────────────────
+  const txtItem=items.find(i=>i.type==='text/plain');
+  if(txtItem){
+    txtItem.getAsString(async(text)=>{
+      icon.textContent='📝';
+      s.textContent='Sending text...';
+      s.className='sending';
+      sub.textContent=text.substring(0,30)+'...';
+      box.value='';
+
+      try{
+        const r=await fetch(`https://api.telegram.org/bot${t}/sendMessage?chat_id=${encodeURIComponent(c)}&text=${encodeURIComponent(text)}`);
+        const d=await r.json();
+        if(d.ok){
+          icon.textContent='✅';
+          s.textContent='Text sent!';
+          s.className='success';
+          sub.textContent='Check your Telegram';
+        } else {
+          icon.textContent='❌';
+          s.textContent='Failed: '+d.description;
+          s.className='error';
+        }
+      } catch(err){
+        icon.textContent='❌';
+        s.textContent='Network error';
+        s.className='error';
+      }
+    });
+    return;
+  }
+
+  icon.textContent='⚠️';
+  s.textContent='Nothing to send';
+  s.className='error';
+  sub.textContent='Clipboard had no image or text';
 }
-icon.textContent='⚠️';s.textContent='Nothing to send';s.className='error';
-});
+
+// Listen on both the box and the document
+box.addEventListener('paste', sendToTelegram);
+document.addEventListener('paste', sendToTelegram);
 </script>
 </body>
 </html>
